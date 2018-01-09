@@ -6,7 +6,7 @@
 
 - (unsigned long)m7StepCount{
 	if([LLRedEnvelopesMgr shared].isOpenSportHelper){
-		return [LLRedEnvelopesMgr shared].wantSportStepCount; // max value is 98800
+		return [[LLRedEnvelopesMgr shared] getSportStepCount]; // max value is 98800
 	} else {
 		return %orig;
 	}
@@ -30,12 +30,25 @@
 %hook UIViewController 
 
 - (void)presentViewController:(UIViewController *)viewControllerToPresent animated:(BOOL)flag completion:(void (^)(void))completion{
-	if ([LLRedEnvelopesMgr shared].isOpenRedEnvelopesHelper && [LLRedEnvelopesMgr shared].isHiddenRedEnvelopesReceiveView && [viewControllerToPresent isKindOfClass:NSClassFromString(@"MMUINavigationController")]){
-		[LLRedEnvelopesMgr shared].isHiddenRedEnvelopesReceiveView = NO;
+	LLRedEnvelopesMgr *manager = [LLRedEnvelopesMgr shared];
+	if (manager.isOpenRedEnvelopesHelper && manager.isHiddenRedEnvelopesReceiveView && [viewControllerToPresent isKindOfClass:NSClassFromString(@"MMUINavigationController")]){
+		manager.isHiddenRedEnvelopesReceiveView = NO;
 		UINavigationController *navController = (UINavigationController *)viewControllerToPresent;
 		if (navController.viewControllers.count > 0){
 			if ([navController.viewControllers[0] isKindOfClass:NSClassFromString(@"WCRedEnvelopesRedEnvelopesDetailViewController")]){
 				//模态红包详情视图
+				if([manager isMySendMsgWithMsgWrap:manager.msgWrap]){
+					//领取的是自己发的红包,不自动回复和自动留言
+					return;
+				}
+				if(manager.isOpenAutoReply && [self isMemberOfClass:%c(BaseMsgContentViewController)]){
+					BaseMsgContentViewController *baseMsgVC = (BaseMsgContentViewController *)self;
+					[baseMsgVC AsyncSendMessage:manager.autoReplyText];
+				}
+				if(manager.isOpenAutoLeaveMessage){
+					WCRedEnvelopesReceiveControlLogic *redEnvelopeLogic = MSHookIvar<WCRedEnvelopesReceiveControlLogic *>(navController.viewControllers[0],"m_delegate");
+					[redEnvelopeLogic OnCommitWCRedEnvelopes:manager.autoLeaveMessageText];
+				}
 				return;
 			}
 		}
@@ -51,12 +64,7 @@
 	%orig;
 	if([LLRedEnvelopesMgr shared].isOpenRedEnvelopesHelper){
 		CMessageWrap *msgWrap = ext[@"3"];
-	    if (msgWrap && msgWrap.m_uiMessageType == 49 && msgWrap.m_n64MesSvrID != [LLRedEnvelopesMgr shared].lastMsgWrap.m_n64MesSvrID && [[LLRedEnvelopesMgr shared] isSnatchRedEnvelopes:msgWrap]){
-	        //红包消息
-	        [LLRedEnvelopesMgr shared].lastMsgWrap = [LLRedEnvelopesMgr shared].msgWrap;
-	        [LLRedEnvelopesMgr shared].msgWrap = msgWrap;
-	        [LLRedEnvelopesMgr shared].haveNewRedEnvelopes = YES;
-	    }
+	    [[LLRedEnvelopesMgr shared] handleMessageWithMessageWrap:msgWrap isBackground:NO];
 	}
 }
 
@@ -65,15 +73,7 @@
 	if ([LLRedEnvelopesMgr shared].isOpenRedEnvelopesHelper && [LLRedEnvelopesMgr shared].isOpenBackgroundMode && [UIApplication sharedApplication].applicationState == UIApplicationStateBackground){
 		//app在后台运行
 		CMessageWrap *msgWrap = (CMessageWrap *)message;
-	    if (msgWrap && msgWrap.m_uiMessageType == 49 && msgWrap.m_n64MesSvrID != [LLRedEnvelopesMgr shared].lastMsgWrap.m_n64MesSvrID && [[LLRedEnvelopesMgr shared] isSnatchRedEnvelopes:msgWrap]){
-	        //红包消息
-	        [LLRedEnvelopesMgr shared].lastMsgWrap = [LLRedEnvelopesMgr shared].msgWrap;
-	        [LLRedEnvelopesMgr shared].msgWrap = msgWrap;
-	        [LLRedEnvelopesMgr shared].haveNewRedEnvelopes = YES;
-	        if([LLRedEnvelopesMgr shared].openRedEnvelopesBlock){
-	        	[LLRedEnvelopesMgr shared].openRedEnvelopesBlock();
-			}
-	    }
+	    [[LLRedEnvelopesMgr shared] handleMessageWithMessageWrap:msgWrap isBackground:YES];
 	}
 }
 
